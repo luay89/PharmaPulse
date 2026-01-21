@@ -218,6 +218,127 @@ router.get('/rxnorm/:rxcui', async (req, res) => {
 });
 
 /**
+ * GET /api/drugs/search/brand
+ * البحث عن أدوية بالاسم التجاري فقط
+ */
+router.get('/search/brand', async (req, res) => {
+    try {
+        const { q, limit = 10 } = req.query;
+
+        if (!q) {
+            return res.status(400).json({
+                success: false,
+                error: 'يجب تحديد الاسم التجاري للبحث'
+            });
+        }
+
+        const result = await openfdaService.searchByBrandName(q, parseInt(limit));
+        res.json(result);
+    } catch (error) {
+        console.error('Brand Search Route Error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/drugs/dangerous
+ * الحصول على الأدوية الأكثر خطورة
+ */
+router.get('/dangerous', async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+
+        const result = await openfdaService.getDangerousDrugs(parseInt(limit));
+        res.json(result);
+    } catch (error) {
+        console.error('Dangerous Drugs Route Error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/drugs/recalls/recent
+ * الحصول على أحدث حالات سحب الأدوية
+ */
+router.get('/recalls/recent', async (req, res) => {
+    try {
+        const { limit = 20, classification = '', status = '' } = req.query;
+
+        const result = await openfdaService.getRecentRecalls({
+            limit: parseInt(limit),
+            classification,
+            status
+        });
+        res.json(result);
+    } catch (error) {
+        console.error('Recent Recalls Route Error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/drugs/recalls/search/:drugName
+ * البحث عن حالات سحب لدواء معين
+ */
+router.get('/recalls/search/:drugName', async (req, res) => {
+    try {
+        const { drugName } = req.params;
+        const { limit = 10 } = req.query;
+
+        if (!drugName) {
+            return res.status(400).json({
+                success: false,
+                error: 'يجب تحديد اسم الدواء'
+            });
+        }
+
+        const result = await openfdaService.searchRecallsByDrug(drugName, parseInt(limit));
+        res.json(result);
+    } catch (error) {
+        console.error('Recall Search Route Error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/drugs/adverse-stats/:name
+ * الحصول على إحصائيات الأعراض الجانبية لدواء
+ */
+router.get('/adverse-stats/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+
+        if (!name) {
+            return res.status(400).json({
+                success: false,
+                error: 'يجب تحديد اسم الدواء'
+            });
+        }
+
+        const result = await openfdaService.getAdverseEventStats(name);
+        res.json(result);
+    } catch (error) {
+        console.error('Adverse Stats Route Error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
  * توليد معرف فريد
  */
 function generateId(str) {

@@ -230,6 +230,198 @@ const API = {
             article.description.toLowerCase().includes(query.toLowerCase())
         );
         return { success: true, data: filtered, totalResults: filtered.length };
+    },
+
+    /**
+     * البحث عن أدوية بالاسم التجاري فقط
+     */
+    async searchByBrandName(brandName, limit = 20) {
+        try {
+            const response = await fetch(
+                `${this.OPENFDA_URL}/drug/label.json?search=openfda.brand_name:"${encodeURIComponent(brandName)}"&limit=${limit}`
+            );
+            
+            if (!response.ok) {
+                if (response.status === 404) return { success: true, data: [] };
+                throw new Error('فشل البحث');
+            }
+            
+            const data = await response.json();
+            const drugs = (data.results || []).map(drug => ({
+                id: drug.id || Math.random().toString(36).substr(2, 9),
+                brandName: drug.openfda?.brand_name?.[0] || 'غير متوفر',
+                genericName: drug.openfda?.generic_name?.[0] || 'غير متوفر',
+                manufacturer: drug.openfda?.manufacturer_name?.[0] || 'غير متوفر',
+                productType: drug.openfda?.product_type?.[0] || 'غير متوفر',
+                route: drug.openfda?.route?.[0] || 'غير متوفر',
+                substanceName: drug.openfda?.substance_name?.[0] || 'غير متوفر',
+                dosageForm: drug.openfda?.dosage_form?.[0] || 'غير متوفر',
+                source: 'openFDA'
+            }));
+            
+            return { success: true, data: drugs, totalResults: drugs.length };
+        } catch (error) {
+            console.error('Brand Search Error:', error);
+            return { success: true, data: [] };
+        }
+    },
+
+    /**
+     * الحصول على الأدوية الخطرة (ذات أعراض جانبية خطيرة)
+     */
+    async getDangerousDrugs(limit = 20) {
+        try {
+            const response = await fetch(
+                `${this.OPENFDA_URL}/drug/event.json?search=serious:1+AND+(seriousnessdeath:1+OR+seriousnesslifethreatening:1)&count=patient.drug.medicinalproduct.exact&limit=${limit}`
+            );
+            
+            if (!response.ok) {
+                if (response.status === 404) return { success: true, data: [] };
+                throw new Error('فشل في جلب البيانات');
+            }
+            
+            const data = await response.json();
+            const drugs = (data.results || []).map(item => ({
+                drugName: item.term,
+                reportCount: item.count,
+                riskLevel: item.count > 1000 ? 'عالي الخطورة' : item.count > 500 ? 'متوسط الخطورة' : 'منخفض الخطورة'
+            }));
+            
+            return { success: true, data: drugs };
+        } catch (error) {
+            console.error('Dangerous Drugs Error:', error);
+            return { success: true, data: [] };
+        }
+    },
+
+    /**
+     * الحصول على أحدث حالات سحب الأدوية
+     */
+    async getRecentRecalls(options = {}) {
+        const { limit = 20, classification = '', status = '' } = options;
+        
+        try {
+            let url = `${this.OPENFDA_URL}/drug/enforcement.json?limit=${limit}&sort=recall_initiation_date:desc`;
+            
+            const searchParams = [];
+            if (status) searchParams.push(`status:"${status}"`);
+            if (classification) searchParams.push(`classification:"${classification}"`);
+            
+            if (searchParams.length > 0) {
+                url += `&search=${searchParams.join('+AND+')}`;
+            }
+            
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                if (response.status === 404) return { success: true, data: [] };
+                throw new Error('فشل في جلب البيانات');
+            }
+            
+            const data = await response.json();
+            const recalls = (data.results || []).map(recall => ({
+                recallNumber: recall.recall_number,
+                productDescription: recall.product_description,
+                reason: recall.reason_for_recall,
+                classification: recall.classification,
+                classificationDescription: this.getClassificationDescription(recall.classification),
+                status: recall.status,
+                recallInitiationDate: recall.recall_initiation_date,
+                terminationDate: recall.termination_date,
+                voluntaryMandated: recall.voluntary_mandated,
+                distributionPattern: recall.distribution_pattern,
+                city: recall.city,
+                state: recall.state,
+                country: recall.country,
+                recallingFirm: recall.recalling_firm,
+                productQuantity: recall.product_quantity
+            }));
+            
+            return { success: true, data: recalls };
+        } catch (error) {
+            console.error('Recent Recalls Error:', error);
+            return { success: true, data: [] };
+        }
+    },
+
+    /**
+     * البحث عن حالات سحب لدواء معين
+     */
+    async searchRecallsByDrug(drugName, limit = 10) {
+        try {
+            const response = await fetch(
+                `${this.OPENFDA_URL}/drug/enforcement.json?search=product_description:"${encodeURIComponent(drugName)}"+OR+openfda.brand_name:"${encodeURIComponent(drugName)}"+OR+openfda.generic_name:"${encodeURIComponent(drugName)}"&limit=${limit}&sort=recall_initiation_date:desc`
+            );
+            
+            if (!response.ok) {
+                if (response.status === 404) return { success: true, data: [] };
+                throw new Error('فشل في جلب البيانات');
+            }
+            
+            const data = await response.json();
+            const recalls = (data.results || []).map(recall => ({
+                recallNumber: recall.recall_number,
+                productDescription: recall.product_description,
+                reason: recall.reason_for_recall,
+                classification: recall.classification,
+                classificationDescription: this.getClassificationDescription(recall.classification),
+                status: recall.status,
+                recallInitiationDate: recall.recall_initiation_date,
+                recallingFirm: recall.recalling_firm,
+                city: recall.city,
+                state: recall.state,
+                country: recall.country
+            }));
+            
+            return { success: true, data: recalls };
+        } catch (error) {
+            console.error('Recall Search Error:', error);
+            return { success: true, data: [] };
+        }
+    },
+
+    /**
+     * الحصول على إحصائيات الأعراض الجانبية لدواء
+     */
+    async getAdverseEventStats(drugName) {
+        try {
+            const response = await fetch(
+                `${this.OPENFDA_URL}/drug/event.json?search=patient.drug.medicinalproduct:"${encodeURIComponent(drugName)}"&count=patient.reaction.reactionmeddrapt.exact`
+            );
+            
+            if (!response.ok) {
+                if (response.status === 404) return { success: true, data: { topReactions: [], totalReports: 0 } };
+                throw new Error('فشل في جلب البيانات');
+            }
+            
+            const data = await response.json();
+            
+            return {
+                success: true,
+                data: {
+                    topReactions: (data.results || []).slice(0, 10).map(r => ({
+                        reaction: r.term,
+                        count: r.count
+                    })),
+                    totalReports: data.meta?.results?.total || 0
+                }
+            };
+        } catch (error) {
+            console.error('Adverse Stats Error:', error);
+            return { success: true, data: { topReactions: [], totalReports: 0 } };
+        }
+    },
+
+    /**
+     * وصف تصنيف السحب
+     */
+    getClassificationDescription(classification) {
+        const descriptions = {
+            'Class I': 'خطير: قد يسبب مشاكل صحية خطيرة أو الوفاة',
+            'Class II': 'متوسط: قد يسبب مشاكل صحية مؤقتة أو قابلة للعلاج',
+            'Class III': 'منخفض: من غير المحتمل أن يسبب مشاكل صحية'
+        };
+        return descriptions[classification] || 'غير محدد';
     }
 };
 
